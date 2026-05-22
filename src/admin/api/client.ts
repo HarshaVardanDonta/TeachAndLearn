@@ -10,18 +10,18 @@ import {
 const CREATABLE_DOCUMENT_TYPES = new Set([
   'stats',
   'service',
+  'service_page',
   'testimonials',
   'whyUs',
   'our_philosophy',
   'about_us',
   'about_us_items',
   'approach',
-  'service_listing_landing',
-  'service_listing_item',
   'footer_settings',
+  'contact_address',
 ])
 
-const DELETABLE_DOCUMENT_TYPES = new Set(['service_listing_item'])
+const DELETABLE_DOCUMENT_TYPES = new Set(['service_page'])
 
 const CONTACT_SUBMISSIONS_QUERY = `*[_type == "contact_submission"] | order(submittedAt desc) {
   _id,
@@ -32,6 +32,23 @@ const CONTACT_SUBMISSIONS_QUERY = `*[_type == "contact_submission"] | order(subm
   message,
   source,
   service,
+  submittedAt,
+  responded,
+  respondedAt
+}`
+
+const FRANCHISE_INQUIRIES_QUERY = `*[_type == "franchise_inquiry"] | order(submittedAt desc) {
+  _id,
+  _type,
+  name,
+  email,
+  mobile,
+  dob,
+  education,
+  currentState,
+  currentDistrict,
+  location,
+  comments,
   submittedAt,
   responded,
   respondedAt
@@ -76,41 +93,27 @@ export async function apiGet<T>(path: string): Promise<T> {
   if (path === '/api/contact-submissions') {
     return c.fetch(CONTACT_SUBMISSIONS_QUERY) as Promise<T>
   }
+  if (path === '/api/franchise-inquiries') {
+    return c.fetch(FRANCHISE_INQUIRIES_QUERY) as Promise<T>
+  }
   if (path === '/api/about-section') {
     const doc = await c.fetch(aboutSectionQuery)
     const section = (doc as { aboutUs?: unknown[] })?.aboutUs?.[0] ?? null
     return section as T
   }
 
-  const serviceListing = path.match(/^\/api\/service-listing\/(child|adult)$/)
-  if (serviceListing) {
-    const audience = serviceListing[1]
-    const landing = await c.fetch(
-      `*[_type == "service_listing_landing" && audience == $audience][0]{
-        _id,
-        _type,
-        audience,
-        heroIntro,
-        sectionTitle,
-        sectionSubtitle
-      }`,
-      { audience },
-    )
+  if (path === '/api/service-pages') {
     const items = await c.fetch(
-      `*[_type == "service_listing_item" && audience == $audience] | order(sortOrder asc, title asc) {
+      `*[_type == "service_page"] | order(sortOrder asc, title asc) {
         _id,
         _type,
-        audience,
         sortOrder,
         title,
-        pathSegment,
-        description,
-        items,
-        iconKey
+        subtitle,
+        "slug": slug.current
       }`,
-      { audience },
     )
-    return { landing, items } as T
+    return { items } as T
   }
 
   const docId = path.match(/^\/api\/documents\/([^/]+)$/)

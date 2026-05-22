@@ -10,9 +10,10 @@ import FooterSettingsPage from './pages/FooterSettingsPage'
 import FranchisePage from './pages/FranchisePage'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
-import ServiceListingsPage from './pages/ServiceListingsPage'
-import ServiceDetailPageEditor from './pages/ServiceDetailPageEditor'
+import ServicePagesPage from './pages/ServicePagesPage'
+import ServicePageEditor from './pages/ServicePageEditor'
 import SubmissionsPage from './pages/SubmissionsPage'
+import FranchiseInquiriesPage from './pages/FranchiseInquiriesPage'
 
 /**
  * Paths are relative to the parent `/admin/*` route. Descendant <Routes> match the URL *suffix*
@@ -31,25 +32,15 @@ export default function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="submissions" element={<SubmissionsPage />} />
+        <Route path="franchise-inquiries" element={<FranchiseInquiriesPage />} />
         <Route path="contact" element={<ContactPage />} />
         <Route path="footer-settings" element={<FooterSettingsPage />} />
         <Route path="home" element={<HomePage />} />
         <Route path="about" element={<AboutPage />} />
         <Route path="franchise" element={<FranchisePage />} />
         <Route path="facilities" element={<FacilitiesPage />} />
-        <Route
-          path="service-listings"
-          element={<Navigate to={adminPath('service-listings/child')} replace />}
-        />
-        <Route
-          path="service-listings/child"
-          element={<ServiceListingsPage audience="child" />}
-        />
-        <Route
-          path="service-listings/adult"
-          element={<ServiceListingsPage audience="adult" />}
-        />
-        <Route path="service-listings/:id/edit" element={<ServiceDetailPageEditor />} />
+        <Route path="service-pages" element={<ServicePagesPage />} />
+        <Route path="service-pages/:id/edit" element={<ServicePageEditor />} />
         <Route path="*" element={<Navigate to={adminPath()} replace />} />
       </Route>
     </Routes>

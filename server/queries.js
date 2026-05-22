@@ -12,7 +12,8 @@ export const footerSettingsQuery = `*[_type == "footer_settings"][0]{
   email,
   locationLabel,
   locationLink,
-  hoursText
+  hoursText,
+  socialLinks[]{ _key, platform, url }
 }`
 
 export const contactUsQuery = `*[_type == "contact_us"][0]{
@@ -40,7 +41,11 @@ export const contactUsQuery = `*[_type == "contact_us"][0]{
     _createdAt,
     _updatedAt,
     title,
-    address
+    address,
+    latitude,
+    longitude,
+    mapScreenshot,
+    "mapScreenshotUrl": mapScreenshot.asset->url
   }
 }`
 
@@ -51,6 +56,29 @@ export const franchiseQuery = `*[_type == "franchise"][0]{
   _updatedAt,
   title,
   description,
+  pageBodyBlocks,
+  pageBody {
+    heroTitle,
+    heroLead,
+    valueChecks,
+    phoneDisplay,
+    phoneTel,
+    ctaApplyLabel,
+    ctaTalkLabel,
+    sectionWhyTitle,
+    sectionWhyBody,
+    sectionImpactTitle,
+    sectionImpactBody,
+    sectionTrustTitle,
+    sectionTrustBody,
+    sectionTrustPartner,
+    sectionFacilityTitle,
+    facilityLines,
+    sectionJoinTitle,
+    sectionJoinBody,
+    sectionPartnersTitle,
+    partnerCriteria
+  },
   supportCardImage {
     asset,
     "assetUrl": asset->url,
@@ -143,14 +171,12 @@ export const homeQuery = `
       name,
       description,
       icon,
-      linkedListingItem->{
+      linkedServicePage->{
         _id,
         title,
-        audience,
-        pathSegment
+        "slug": slug.current
       },
-      "audience": linkedListingItem->audience,
-      "pathSegment": linkedListingItem->pathSegment
+      "serviceSlug": linkedServicePage->slug.current
     },
     stats[]->{
       _id,
@@ -228,5 +254,14 @@ export const aboutSectionQuery = `
         description
       }
     }
+  }
+`
+
+export const featuredServicePagesForNavQuery = `
+  *[_type == "service_page" && isFeaturedInNav == true] | order(sortOrder asc, title asc) {
+    _id,
+    title,
+    "slug": slug.current,
+    contentHtml
   }
 `

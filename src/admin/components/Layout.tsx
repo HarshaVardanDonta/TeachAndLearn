@@ -111,6 +111,9 @@ export default function Layout() {
           <NavLink to={adminPath('submissions')} className={linkClass}>
             Submissions
           </NavLink>
+          <NavLink to={adminPath('franchise-inquiries')} className={linkClass}>
+            Franchise inquiries
+          </NavLink>
           <NavLink to={adminPath('contact')} className={linkClass}>
             Contact
           </NavLink>
@@ -129,11 +132,8 @@ export default function Layout() {
           <NavLink to={adminPath('facilities')} className={linkClass}>
             Facilities
           </NavLink>
-          <NavLink to={adminPath('service-listings/child')} className={linkClass}>
-            Child service listings
-          </NavLink>
-          <NavLink to={adminPath('service-listings/adult')} className={linkClass}>
-            Adult service listings
+          <NavLink to={adminPath('service-pages')} className={linkClass}>
+            Service pages
           </NavLink>
         </nav>
       </aside>

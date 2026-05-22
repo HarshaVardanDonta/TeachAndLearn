@@ -255,6 +255,24 @@ export default function SubmissionsPage() {
                   <dt>Phone</dt>
                   <dd>{s.contact ?? '—'}</dd>
                 </div>
+                {s.requestType ? (
+                  <div>
+                    <dt>Request type</dt>
+                    <dd>
+                      {s.requestType === 'assessment'
+                        ? 'Assessment'
+                        : s.requestType === 'service'
+                          ? 'Service'
+                          : s.requestType}
+                    </dd>
+                  </div>
+                ) : null}
+                {Array.isArray(s.requestedServices) && s.requestedServices.length > 0 ? (
+                  <div>
+                    <dt>Selected services</dt>
+                    <dd>{s.requestedServices.filter(Boolean).join(', ')}</dd>
+                  </div>
+                ) : null}
                 {s.service ? (
                   <div>
                     <dt>Service</dt>

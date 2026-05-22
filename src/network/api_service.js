@@ -20,12 +20,47 @@ const writeClient = createClient({
   token: import.meta.env.VITE_SANITY_WRITE_TOKEN,
 });
 
+function serverApiBase() {
+  return String(import.meta.env.VITE_SERVER_API_ORIGIN ?? "").trim().replace(/\/+$/, "");
+}
+
+async function postToServer(path, body) {
+  const base = serverApiBase();
+  const url = `${base}${path}`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const err = new Error(data?.error || "Request failed");
+    err.code = data?.code || "SERVER_ERROR";
+    throw err;
+  }
+  return data;
+}
+
 const CONTACT_MAX = {
   name: 200,
   contact: 80,
   email: 320,
   message: 10000,
   service: 200,
+  requestType: 40,
+  requestedServicesItem: 200,
+  requestedServicesTotal: 2000,
+};
+
+const FRANCHISE_INQUIRY_MAX = {
+  name: 200,
+  email: 320,
+  mobile: 20,
+  education: 120,
+  currentState: 120,
+  currentDistrict: 120,
+  location: 200,
+  comments: 10000,
 };
 
 /**
@@ -34,6 +69,8 @@ const CONTACT_MAX = {
  * @param {object} params
  * @param {'contact_page'|'home_book'} [params.source]
  * @param {string} [params.service] Required when source is `home_book` (selected service name).
+ * @param {'assessment'|'service'} [params.requestType] Required when source is `home_book`.
+ * @param {string[]} [params.requestedServices] Required when source is `home_book`.
  */
 export async function submitContactSubmission({
   name,
@@ -42,26 +79,30 @@ export async function submitContactSubmission({
   message,
   source,
   service,
+  requestType,
+  requestedServices,
 }) {
-  const token = import.meta.env.VITE_SANITY_WRITE_TOKEN?.trim();
-  if (!token) {
-    const err = new Error("MISSING_WRITE_TOKEN");
-    err.code = "MISSING_WRITE_TOKEN";
-    throw err;
-  }
-
   const n = String(name ?? "").trim();
   const c = String(contact ?? "").trim();
   const em = String(email ?? "").trim();
   const m = String(message ?? "").trim();
   const svc = String(service ?? "").trim();
+  const rt = String(requestType ?? "").trim();
+  const requested = Array.isArray(requestedServices)
+    ? requestedServices.map((v) => String(v ?? "").trim()).filter(Boolean)
+    : [];
 
   if (!n || !c || !em || !m) {
     const err = new Error("Please fill in all required fields.");
     err.code = "VALIDATION";
     throw err;
   }
-  if (source === "home_book" && !svc) {
+  if (source === "home_book" && !rt) {
+    const err = new Error("Please select Assessment or Service.");
+    err.code = "VALIDATION";
+    throw err;
+  }
+  if (source === "home_book" && requested.length === 0 && !svc) {
     const err = new Error("Please select a service.");
     err.code = "VALIDATION";
     throw err;
@@ -76,8 +117,24 @@ export async function submitContactSubmission({
     err.code = "VALIDATION";
     throw err;
   }
-  if (svc.length > CONTACT_MAX.service) {
+  if (svc.length > CONTACT_MAX.service || rt.length > CONTACT_MAX.requestType) {
     const err = new Error("A field is too long.");
+    err.code = "VALIDATION";
+    throw err;
+  }
+  if (requested.some((s) => s.length > CONTACT_MAX.requestedServicesItem)) {
+    const err = new Error("A selected service name is too long.");
+    err.code = "VALIDATION";
+    throw err;
+  }
+  const requestedJoin = requested.join(", ");
+  if (requestedJoin.length > CONTACT_MAX.requestedServicesTotal) {
+    const err = new Error("Too many services selected.");
+    err.code = "VALIDATION";
+    throw err;
+  }
+  if (source === "home_book" && rt !== "assessment" && rt !== "service") {
+    const err = new Error("Invalid request type.");
     err.code = "VALIDATION";
     throw err;
   }
@@ -85,6 +142,24 @@ export async function submitContactSubmission({
     const err = new Error("Please enter a valid email address.");
     err.code = "VALIDATION";
     throw err;
+  }
+
+  const derivedService = requested.length > 0 ? requestedJoin : svc;
+  // Prefer server endpoint (can send email); fallback to direct Sanity write for dev setups.
+  try {
+    return await postToServer("/api/public/contact-submission", {
+      name: n,
+      contact: c,
+      email: em,
+      message: m,
+      source,
+      service: derivedService,
+      requestType: rt || undefined,
+      requestedServices: requested.length > 0 ? requested : undefined,
+    });
+  } catch (e) {
+    const token = import.meta.env.VITE_SANITY_WRITE_TOKEN?.trim();
+    if (!token) throw e;
   }
 
   const doc = {
@@ -99,9 +174,106 @@ export async function submitContactSubmission({
   if (source === "contact_page" || source === "home_book") {
     doc.source = source;
   }
-  if (svc) {
-    doc.service = svc;
+  if (derivedService) {
+    // Legacy display field used by older admin UI/search paths.
+    doc.service = derivedService;
   }
+  if (rt) {
+    doc.requestType = rt;
+  }
+  if (requested.length > 0) {
+    doc.requestedServices = requested;
+  }
+
+  return writeClient.create(doc);
+}
+
+/**
+ * Creates a `franchise_inquiry` document in Sanity. Requires `VITE_SANITY_WRITE_TOKEN`
+ * (Editor token) and the site origin allowed under API → CORS in sanity.io/manage.
+ */
+export async function submitFranchiseInquiry({
+  name,
+  email,
+  mobile,
+  dob,
+  education,
+  currentState,
+  currentDistrict,
+  location,
+  comments,
+}) {
+  const n = String(name ?? "").trim();
+  const em = String(email ?? "").trim();
+  const mob = String(mobile ?? "").trim();
+  const dobVal = String(dob ?? "").trim();
+  const edu = String(education ?? "").trim();
+  const st = String(currentState ?? "").trim();
+  const dist = String(currentDistrict ?? "").trim();
+  const loc = String(location ?? "").trim();
+  const com = String(comments ?? "").trim();
+
+  if (!n || !em || !mob || !dobVal || !edu || !st || !dist || !loc || !com) {
+    const err = new Error("Please fill in all required fields.");
+    err.code = "VALIDATION";
+    throw err;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) {
+    const err = new Error("Please enter a valid email address.");
+    err.code = "VALIDATION";
+    throw err;
+  }
+  if (mob.length > FRANCHISE_INQUIRY_MAX.mobile || !/^[0-9]{10}$/.test(mob)) {
+    const err = new Error("Enter a valid 10-digit mobile number.");
+    err.code = "VALIDATION";
+    throw err;
+  }
+  if (
+    n.length > FRANCHISE_INQUIRY_MAX.name ||
+    em.length > FRANCHISE_INQUIRY_MAX.email ||
+    edu.length > FRANCHISE_INQUIRY_MAX.education ||
+    st.length > FRANCHISE_INQUIRY_MAX.currentState ||
+    dist.length > FRANCHISE_INQUIRY_MAX.currentDistrict ||
+    loc.length > FRANCHISE_INQUIRY_MAX.location ||
+    com.length > FRANCHISE_INQUIRY_MAX.comments
+  ) {
+    const err = new Error("A field is too long.");
+    err.code = "VALIDATION";
+    throw err;
+  }
+
+  // Prefer server endpoint (can send email); fallback to direct Sanity write for dev setups.
+  try {
+    return await postToServer("/api/public/franchise-inquiry", {
+      name: n,
+      email: em,
+      mobile: mob,
+      dob: dobVal,
+      education: edu,
+      currentState: st,
+      currentDistrict: dist,
+      location: loc,
+      comments: com,
+    });
+  } catch (e) {
+    const token = import.meta.env.VITE_SANITY_WRITE_TOKEN?.trim();
+    if (!token) throw e;
+  }
+
+  const doc = {
+    _type: "franchise_inquiry",
+    name: n,
+    email: em,
+    mobile: mob,
+    dob: dobVal,
+    education: edu,
+    currentState: st,
+    currentDistrict: dist,
+    location: loc,
+    comments: com,
+    submittedAt: new Date().toISOString(),
+    responded: false,
+  };
 
   return writeClient.create(doc);
 }
@@ -117,7 +289,8 @@ export function getFooterSettings() {
     email,
     locationLabel,
     locationLink,
-    hoursText
+    hoursText,
+    socialLinks[]{ _key, platform, url }
   }`);
 }
 
@@ -148,6 +321,10 @@ export function getContactUs() {
       _updatedAt,
       title,
       address,
+      latitude,
+      longitude,
+      mapScreenshot,
+      "mapScreenshotUrl": mapScreenshot.asset->url
     }
   }`);
 }
@@ -178,31 +355,66 @@ export function urlForSanityImage(image) {
 }
 
 /**
- * @param {'child'|'adult'} audience
- * @param {string} pathSegment slug, e.g. speech, psychology
+ * @param {string} slug URL segment after /service/
  */
-export async function getServiceListingPage(audience, pathSegment) {
-  const slug = String(pathSegment || "").trim();
+export async function getServicePageBySlug(slugParam) {
+  const slug = String(slugParam || "").trim();
   if (!slug) return null;
   return client.fetch(
-    `*[_type == "service_listing_item" && audience == $audience && pathSegment == $slug][0]{
+    `*[_type == "service_page" && slug.current == $slug][0]{
       _id,
       _type,
-      audience,
       sortOrder,
       title,
-      pathSegment,
-      description,
-      items,
-      iconKey,
+      subtitle,
+      body,
+      contentHtml,
+      isFeaturedInNav,
       headerColor,
-      pageTitlePrefix,
-      pageTitleAccent,
-      heroTagline,
       showCta,
-      pageBlocks
+      slug,
+      contentBlocks[]{
+        _key,
+        tags,
+        title,
+        body,
+        images[]{
+          _key,
+          alt,
+          caption,
+          image{
+            asset,
+            hotspot,
+            crop
+          }
+        }
+      }
     }`,
-    { audience, slug },
+    { slug },
+  );
+}
+
+/** Featured services for navbar strip with heading source content. */
+export async function getFeaturedServicePagesForNav() {
+  return client.fetch(
+    `*[_type == "service_page" && isFeaturedInNav == true] | order(sortOrder asc, title asc) {
+      _id,
+      title,
+      "slug": slug.current,
+      contentHtml
+    }`,
+  );
+}
+
+/** Minimal rows for footer / nav (title + slug). */
+export async function getServicePagesIndex() {
+  return client.fetch(
+    `*[_type == "service_page"] | order(sortOrder asc, title asc) {
+      _id,
+      title,
+      "slug": slug.current,
+      cardHighlights
+    }`,
   );
 }
 
@@ -215,6 +427,29 @@ export async function getFranchise() {
       _updatedAt,
       title,
       description,
+      pageBodyBlocks,
+      pageBody {
+        heroTitle,
+        heroLead,
+        valueChecks,
+        phoneDisplay,
+        phoneTel,
+        ctaApplyLabel,
+        ctaTalkLabel,
+        sectionWhyTitle,
+        sectionWhyBody,
+        sectionImpactTitle,
+        sectionImpactBody,
+        sectionTrustTitle,
+        sectionTrustBody,
+        sectionTrustPartner,
+        sectionFacilityTitle,
+        facilityLines,
+        sectionJoinTitle,
+        sectionJoinBody,
+        sectionPartnersTitle,
+        partnerCriteria
+      },
       supportCardImage {
         asset,
         "assetUrl": asset->url,
@@ -316,8 +551,12 @@ export async function getHome() {
           name,
           description,
           icon,
-          "audience": linkedListingItem->audience,
-          "pathSegment": linkedListingItem->pathSegment
+          linkedServicePage->{
+            _id,
+            title,
+            "slug": slug.current
+          },
+          "serviceSlug": linkedServicePage->slug.current
         },
         stats[]->{
           _id,
@@ -397,37 +636,6 @@ export async function getStatistics() {
     console.error("Error fetching statistics:", error);
     throw error;
   }
-}
-
-export async function getServiceListingLanding(audience) {
-  return client.fetch(
-    `*[_type == "service_listing_landing" && audience == $audience][0]{
-      _id,
-      _type,
-      audience,
-      heroIntro,
-      sectionTitle,
-      sectionSubtitle
-    }`,
-    { audience },
-  );
-}
-
-export async function getServiceListingItems(audience) {
-  return client.fetch(
-    `*[_type == "service_listing_item" && audience == $audience] | order(sortOrder asc, title asc) {
-      _id,
-      _type,
-      audience,
-      sortOrder,
-      title,
-      pathSegment,
-      description,
-      items,
-      iconKey
-    }`,
-    { audience },
-  );
 }
 
 /** First `about_us` block as referenced on the `home` document (same ordering as Home page). */
